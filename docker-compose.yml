@@ -20,10 +20,11 @@ services:
     environment:
       HTTP_ADDR: ":8080"
       DATABASE_URL: "postgres://dragon:dragon@postgres:5432/dragon_market?sslmode=disable"
-      # Spec default is 24h; shortened here so a reviewer can watch an auction
-      # settle in the console without waiting. Both are configurable.
-      AUCTION_WINDOW: "2m"
-      AUCTION_EXTENSION: "30s"
+      # Demo-friendly: a 6m window with a 5m anti-snipe extension, so a late bid
+      # visibly resets the countdown and auctions still settle quickly. Spec
+      # suggests 24h — both are configurable.
+      AUCTION_WINDOW: "6m"
+      AUCTION_EXTENSION: "5m"
     ports:
       - "8080:8080"
     depends_on:

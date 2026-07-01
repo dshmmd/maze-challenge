@@ -27,7 +27,10 @@ func main() {
 	dsn := getenv("DATABASE_URL", "postgres://dragon:dragon@localhost:5432/dragon_market?sslmode=disable")
 
 	cfg := service.Config{
-		AuctionWindow:    getdur("AUCTION_WINDOW", 24*time.Hour),
+		// Demo-friendly defaults so the anti-snipe rule is easy to see: a bid in
+		// the final 5 minutes of the 6-minute window pushes the close out. Both
+		// are configurable (the spec suggests 24h; override via env for that).
+		AuctionWindow:    getdur("AUCTION_WINDOW", 6*time.Minute),
 		AuctionExtension: getdur("AUCTION_EXTENSION", 5*time.Minute),
 	}
 
