@@ -44,6 +44,9 @@
   .t{padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);max-width:340px}
   .t.ok{border-color:#2e6b46} .t.err{border-color:#7a2738}
   code{color:var(--muted);font-size:12px}
+  .count{font-variant-numeric:tabular-nums;font-weight:600}
+  .count.soon{color:var(--red)}
+  .count.ended{color:var(--muted);font-weight:500}
 </style>
 </head>
 <body>
@@ -88,16 +91,16 @@
   </section>
 
   <section class="card wide">
-    <h2>Active auctions <span class="tag">bid ≥ +5%; last-5-min bids extend the close</span></h2>
+    <h2>Active auctions <span class="tag">bid ≥ +5%; last-window bids extend the close · times in Tehran (UTC+3:30)</span></h2>
     <table id="auctions"><thead><tr>
-      <th>Item</th><th>Seller</th><th>Highest</th><th>Min next</th><th>Ends (UTC)</th><th>Bid</th><th>Your bids</th>
+      <th>Item</th><th>Seller</th><th>Highest</th><th>Min next</th><th>Ends (Tehran)</th><th>Remaining</th><th>Bid</th><th>Your bids</th>
     </tr></thead><tbody></tbody></table>
   </section>
 
   <section class="card wide">
     <h2>Ledger <span class="tag">every gold movement is traceable</span></h2>
     <table id="ledger"><thead><tr>
-      <th>Type</th><th>Amount</th><th>Item</th><th>Memo</th><th>At (UTC)</th>
+      <th>Type</th><th>Amount</th><th>Item</th><th>Memo</th><th>At (Tehran)</th>
     </tr></thead><tbody></tbody></table>
   </section>
 </main>
@@ -145,6 +148,14 @@ async function loadItems(){
 
 async function loadAuctions(){
   const as=await api('GET','/auctions');
+  // Preserve anything the user is typing into a bid box (and their cursor)
+  // across the periodic re-render, so the 5s refresh doesn't wipe input.
+  const activeId = (document.activeElement && document.activeElement.id||'').startsWith('bid_')
+    ? document.activeElement.id : null;
+  const caret = activeId ? document.activeElement.selectionStart : null;
+  const typed = {};
+  document.querySelectorAll('#auctions input[id^="bid_"]').forEach(el=>{ if(el.value) typed[el.id]=el.value; });
+
   $('#auctions tbody').innerHTML = as.map(a=>{
     const hi = a.highest_bid ? `${a.highest_bid.amount} <span class="muted">(${short(a.highest_bid.guild_id)})</span>` : '<span class="muted">none</span>';
     const mine = a.bids.filter(b=>b.guild_id===guild());
@@ -155,22 +166,53 @@ async function loadAuctions(){
       return `<div>${b.amount}${leader?' 👑':''}${active}${cancel}</div>`;
     }).join('') || '<span class="muted">—</span>';
     return `<tr><td><code>${short(a.item_id)}</code></td><td><code>${short(a.seller_guild_id)}</code></td>
-      <td>${hi}</td><td class="gold">${a.min_next_bid}</td><td class="muted">${a.ends_at}</td>
+      <td>${hi}</td><td class="gold">${a.min_next_bid}</td><td class="muted">${fmtTehran(a.ends_at)}</td>
+      <td><span class="count" data-ends="${a.ends_at}">…</span></td>
       <td><div class="row" style="margin:0"><input type="number" id="bid_${a.item_id}" placeholder="${a.min_next_bid}" style="width:90px">
         <button onclick="placeBid('${a.item_id}')">Bid</button></div></td>
       <td>${yours}</td></tr>`;
-  }).join('') || `<tr><td colspan="7" class="muted">No active auctions — list a Legendary item.</td></tr>`;
+  }).join('') || `<tr><td colspan="8" class="muted">No active auctions — list a Legendary item.</td></tr>`;
+  tickCountdowns();
+
+  // Restore typed bid values + focus/caret.
+  for(const id in typed){ const el=document.getElementById(id); if(el) el.value=typed[id]; }
+  if(activeId){ const el=document.getElementById(activeId);
+    if(el){ el.focus(); try{ el.setSelectionRange(caret,caret); }catch(_){} } }
 }
 
 async function loadLedger(){
   const es=await api('GET','/guilds/'+guild()+'/ledger');
   $('#ledger tbody').innerHTML = es.slice().reverse().map(e=>
     `<tr><td>${pill('',e.type)}</td><td>${e.amount}</td><td><code>${short(e.item_id||'')}</code></td>
-     <td class="muted">${e.memo||''}</td><td class="muted">${e.at}</td></tr>`
+     <td class="muted">${e.memo||''}</td><td class="muted">${fmtTehran(e.at)}</td></tr>`
   ).join('') || `<tr><td colspan="5" class="muted">No transactions yet.</td></tr>`;
 }
 
 const short = s => s ? (s.length>10? s.slice(0,8)+'…' : s) : '';
+
+// Times from the API are UTC (…Z); show them in Tehran (UTC+3:30, no DST).
+const TZ = 'Asia/Tehran';
+function fmtTehran(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  if(isNaN(d)) return iso;
+  return d.toLocaleString('en-GB',{timeZone:TZ,hour12:false,
+    day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+
+// Live countdown to an auction close.
+function tickCountdowns(){
+  const now = Date.now();
+  document.querySelectorAll('#auctions .count[data-ends]').forEach(el=>{
+    const ms = new Date(el.dataset.ends) - now;
+    el.classList.remove('soon','ended');
+    if(ms <= 0){ el.textContent = 'ended'; el.classList.add('ended'); return; }
+    const s = Math.floor(ms/1000), h = Math.floor(s/3600), m = Math.floor(s%3600/60), sec = s%60;
+    el.textContent = (h? h+'h ' : '') + String(m).padStart(2,'0')+'m '+String(sec).padStart(2,'0')+'s';
+    if(ms < 60000) el.classList.add('soon'); // under a minute → highlight
+  });
+}
+setInterval(tickCountdowns, 1000);
 
 async function createItem(){
   try{
