@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Fast, infrastructure-free gate: formatting, vet, build, and the unit/domain
+  # tests (with the race detector, to back the concurrency guarantees).
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: gofmt (must be clean)
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: build
+        run: go build ./...
+
+      - name: test (race)
+        run: go test -race ./...
+
+  # End-to-end: run the real server against a real Postgres and drive it through
+  # the black-box QA scenarios (scripts/qa.mjs). Proves the three guarantees hold
+  # against the production adapter, not just the in-memory test double.
+  e2e:
+    runs-on: ubuntu-latest
+    needs: check
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dragon
+          POSTGRES_PASSWORD: dragon
+          POSTGRES_DB: dragon_market
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dragon -d dragon_market"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgres://dragon:dragon@localhost:5432/dragon_market?sslmode=disable
+      HTTP_ADDR: ":8095"
+      # Short auction window so the settlement scenarios finish within the run.
+      AUCTION_WINDOW: "5s"
+      AUCTION_EXTENSION: "2s"
+      BASE: http://localhost:8095
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: build server
+        run: go build -o dragon-server ./cmd/server
+
+      - name: start server
+        run: |
+          ./dragon-server > server.log 2>&1 &
+          echo $! > server.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8095/healthz >/dev/null; then
+              echo "server up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not become healthy"; cat server.log; exit 1
+
+      - name: run QA simulation
+        run: node scripts/qa.mjs
+
+      - name: server logs (always)
+        if: always()
+        run: cat server.log || true
+
+      - name: stop server
+        if: always()
+        run: kill "$(cat server.pid)" 2>/dev/null || true
