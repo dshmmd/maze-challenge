@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dragon Market — Console</title>
+<style>
+  :root{
+    --bg:#0e0b16; --panel:#191428; --panel2:#221a38; --line:#33294f;
+    --ink:#ece7fb; --muted:#9b8fc7; --gold:#f4c14b; --green:#5fd08a;
+    --red:#ff6b81; --accent:#a06bff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 70% -10%,#241a3f 0,var(--bg) 60%);
+       color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:16px;padding:18px 26px;border-bottom:1px solid var(--line)}
+  header h1{font-size:20px;margin:0;letter-spacing:.5px}
+  header h1 .drg{color:var(--gold)}
+  .who{margin-left:auto;display:flex;align-items:center;gap:10px}
+  select,input,button{font:inherit;color:var(--ink);background:var(--panel2);
+       border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  button{cursor:pointer;background:linear-gradient(180deg,#7a4cff,#5b34c7);border:none;font-weight:600}
+  button.ghost{background:var(--panel2);border:1px solid var(--line);font-weight:500}
+  button:hover{filter:brightness(1.08)}
+  main{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding:22px;max-width:1180px;margin:0 auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+  .card h2{margin:0 0 12px;font-size:15px;display:flex;align-items:center;gap:8px}
+  .card h2 .tag{font-size:11px;color:var(--muted);font-weight:500}
+  .wide{grid-column:1 / -1}
+  .wallet{display:flex;gap:22px;flex-wrap:wrap}
+  .wallet .n{font-size:22px;font-weight:700}
+  .wallet .gold{color:var(--gold)} .wallet .res{color:var(--accent)} .wallet .av{color:var(--green)}
+  .wallet small{display:block;color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  .pill{padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid var(--line)}
+  .pill.common{color:#cdd6f4} .pill.rare{color:#7bdcff} .pill.legendary{color:var(--gold)}
+  .pill.available{color:var(--green)} .pill.in_auction{color:var(--accent)} .pill.sold_out{color:var(--muted)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+  .row input{width:110px} .row input.name{width:150px}
+  .muted{color:var(--muted)}
+  #toast{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:9}
+  .t{padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);max-width:340px}
+  .t.ok{border-color:#2e6b46} .t.err{border-color:#7a2738}
+  code{color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🐲 <span class="drg">Dragon</span> Market <span class="muted" style="font-size:12px">console</span></h1>
+  <div class="who">
+    <span class="muted">acting guild</span>
+    <select id="guild">
+      {{range .Guilds}}<option value="{{.}}">{{.}}</option>{{end}}
+    </select>
+    <button class="ghost" onclick="refreshAll()">↻ refresh</button>
+  </div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Wallet <span class="tag">total − reserved = available</span></h2>
+    <div class="wallet" id="wallet"><span class="muted">…</span></div>
+  </section>
+
+  <section class="card">
+    <h2>List an item <span class="tag">Legendary opens an auction</span></h2>
+    <div class="row">
+      <input class="name" id="i_name" placeholder="name e.g. Soul Reaver">
+      <select id="i_rarity">
+        <option value="common">common</option>
+        <option value="rare">rare</option>
+        <option value="legendary">legendary</option>
+      </select>
+      <input id="i_price" type="number" placeholder="price/start bid" value="100">
+      <input id="i_qty" type="number" placeholder="qty" value="5">
+      <button onclick="createItem()">List</button>
+    </div>
+    <p class="muted" style="margin:10px 2px 0">For Legendary, <b>price</b> is the starting bid and quantity is ignored.</p>
+  </section>
+
+  <section class="card wide">
+    <h2>Items <span class="tag">price is fixed; oracle price is advisory</span></h2>
+    <table id="items"><thead><tr>
+      <th>Name</th><th>Rarity</th><th>Seller</th><th>Price</th><th>Oracle</th><th>Qty</th><th>Status</th><th></th>
+    </tr></thead><tbody></tbody></table>
+  </section>
+
+  <section class="card wide">
+    <h2>Active auctions <span class="tag">bid ≥ +5%; last-5-min bids extend the close</span></h2>
+    <table id="auctions"><thead><tr>
+      <th>Item</th><th>Seller</th><th>Highest</th><th>Min next</th><th>Ends (UTC)</th><th>Bid</th><th>Your bids</th>
+    </tr></thead><tbody></tbody></table>
+  </section>
+
+  <section class="card wide">
+    <h2>Ledger <span class="tag">every gold movement is traceable</span></h2>
+    <table id="ledger"><thead><tr>
+      <th>Type</th><th>Amount</th><th>Item</th><th>Memo</th><th>At (UTC)</th>
+    </tr></thead><tbody></tbody></table>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const guild = () => $('#guild').value;
+function toast(msg, ok){ const d=document.createElement('div'); d.className='t '+(ok?'ok':'err');
+  d.textContent=msg; $('#toast').appendChild(d); setTimeout(()=>d.remove(), 4200); }
+
+async function api(method, path, body){
+  const opt={method, headers:{'X-Guild-Id':guild()}};
+  if(body){ opt.headers['Content-Type']='application/json'; opt.body=JSON.stringify(body); }
+  const res=await fetch(path,opt);
+  const text=await res.text(); let data=null; try{data=text?JSON.parse(text):null}catch{}
+  if(!res.ok){ throw new Error((data&&data.error)||('HTTP '+res.status)); }
+  return data;
+}
+
+function pill(cls,txt){ return `<span class="pill ${cls}">${txt}</span>`; }
+
+async function loadWallet(){
+  try{
+    const w=await api('GET','/guilds/'+guild()+'/wallet');
+    $('#wallet').innerHTML =
+      `<div><small>Total</small><span class="n gold">${w.total}</span></div>
+       <div><small>Reserved</small><span class="n res">${w.reserved}</span></div>
+       <div><small>Available</small><span class="n av">${w.available}</span></div>`;
+  }catch(e){ $('#wallet').innerHTML='<span class="err">'+e.message+'</span>'; }
+}
+
+async function loadItems(){
+  const items=await api('GET','/items');
+  $('#items tbody').innerHTML = items.map(i=>{
+    const oracle = (i.oracle_price!=null)? i.oracle_price : '—';
+    const canBuy = i.rarity!=='legendary' && i.status==='available';
+    const buy = canBuy ? `<button class="ghost" onclick="buy('${i.id}')">Buy 1</button>` : '';
+    return `<tr><td>${i.name}</td><td>${pill(i.rarity,i.rarity)}</td><td><code>${short(i.seller_guild_id)}</code></td>
+      <td>${i.rarity==='legendary'?'—':i.price}</td><td class="muted">${oracle}</td>
+      <td>${i.rarity==='legendary'?'1':i.quantity}</td><td>${pill(i.status,i.status)}</td><td>${buy}</td></tr>`;
+  }).join('') || `<tr><td colspan="8" class="muted">No items yet — list one above.</td></tr>`;
+}
+
+async function loadAuctions(){
+  const as=await api('GET','/auctions');
+  $('#auctions tbody').innerHTML = as.map(a=>{
+    const hi = a.highest_bid ? `${a.highest_bid.amount} <span class="muted">(${short(a.highest_bid.guild_id)})</span>` : '<span class="muted">none</span>';
+    const mine = a.bids.filter(b=>b.guild_id===guild());
+    const yours = mine.map(b=>{
+      const leader = a.highest_bid && a.highest_bid.id===b.id;
+      const active = b.active ? '' : ' <span class="muted">(cancelled)</span>';
+      const cancel = (b.active && !leader) ? ` <button class="ghost" onclick="cancelBid('${a.item_id}','${b.id}')">cancel</button>` : '';
+      return `<div>${b.amount}${leader?' 👑':''}${active}${cancel}</div>`;
+    }).join('') || '<span class="muted">—</span>';
+    return `<tr><td><code>${short(a.item_id)}</code></td><td><code>${short(a.seller_guild_id)}</code></td>
+      <td>${hi}</td><td class="gold">${a.min_next_bid}</td><td class="muted">${a.ends_at}</td>
+      <td><div class="row" style="margin:0"><input type="number" id="bid_${a.item_id}" placeholder="${a.min_next_bid}" style="width:90px">
+        <button onclick="placeBid('${a.item_id}')">Bid</button></div></td>
+      <td>${yours}</td></tr>`;
+  }).join('') || `<tr><td colspan="7" class="muted">No active auctions — list a Legendary item.</td></tr>`;
+}
+
+async function loadLedger(){
+  const es=await api('GET','/guilds/'+guild()+'/ledger');
+  $('#ledger tbody').innerHTML = es.slice().reverse().map(e=>
+    `<tr><td>${pill('',e.type)}</td><td>${e.amount}</td><td><code>${short(e.item_id||'')}</code></td>
+     <td class="muted">${e.memo||''}</td><td class="muted">${e.at}</td></tr>`
+  ).join('') || `<tr><td colspan="5" class="muted">No transactions yet.</td></tr>`;
+}
+
+const short = s => s ? (s.length>10? s.slice(0,8)+'…' : s) : '';
+
+async function createItem(){
+  try{
+    await api('POST','/items',{name:$('#i_name').value||'Unnamed',rarity:$('#i_rarity').value,
+      price:+$('#i_price').value, quantity:+$('#i_qty').value});
+    toast('Item listed',1); refreshAll();
+  }catch(e){ toast(e.message,0); }
+}
+async function buy(id){ try{ await api('POST','/items/'+id+'/purchase',{quantity:1}); toast('Bought',1); refreshAll(); }catch(e){ toast(e.message,0);} }
+async function placeBid(itemId){
+  const amt=+$('#bid_'+itemId).value;
+  try{ await api('POST','/items/'+itemId+'/bid',{amount:amt}); toast('Bid placed',1); refreshAll(); }catch(e){ toast(e.message,0);} }
+async function cancelBid(itemId,bidId){ try{ await api('DELETE','/items/'+itemId+'/bid/'+bidId); toast('Bid cancelled',1); refreshAll(); }catch(e){ toast(e.message,0);} }
+
+async function refreshAll(){ await Promise.all([loadWallet(),loadItems(),loadAuctions(),loadLedger()]); }
+$('#guild').addEventListener('change', refreshAll);
+refreshAll();
+setInterval(refreshAll, 5000); // reflect auction settlement by the worker
+</script>
+</body>
+</html>
