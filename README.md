@@ -1,84 +1,134 @@
-# Dragon Market — Backend Engineering Challenge (Go)
+# Dragon Market — چالش فنی بک‌اند (Go)
 
-> A secure marketplace core for buying and auctioning the legendary items of
-> Aethoria — correct, auditable, and over-commitment-proof under duplicate
-> requests, flaky external services, and concurrent bids.
+با سلام و خسته نباشید 👋
 
-<!-- This README is my note to the reviewers. I'll fill each section below in my
-     own words. Deeper rationale lives in docs/adr/ and ROADMAP.md. -->
+شاید هنوز هم بعضی کارجوها یا کارفرماها فکر کنن استفاده از ایجنت‌های هوش مصنوعی
+برای انجام تسک‌ها و آزمون‌ها کار درستی نیست؛ ولی به نظر من توی دنیایی که خیلی زود
+بهش می‌رسیم، آدم‌هایی موفق‌ترن که بتونن درست و بهینه از ابزارها استفاده کنن.
 
-## Overview
+من برای این تسک تصمیم گرفتم با رعایت استانداردهای درست و استفادهٔ بهینه از ایجنت،
+نیازمندی‌ها رو حسابی و تمیز پیاده کنم؛ کاری که انجامش بدون AI شاید بیشتر از یک ماه
+ازم وقت می‌گرفت. البته تصمیم‌های دیزاینیِ مهم مستقیم به خودم واگذار شده بود و باید
+درباره‌شون توضیح می‌دادم — که این کار رو توی همین داکیومنت انجام دادم و پایین‌تر
+می‌تونید ببینید.
 
-<!-- One short paragraph: what this service is and the 3 guarantees it upholds. -->
+پ.ن: تأخیر در ارسال تسک عمدتاً به‌خاطر حجم بالای کارم توی اسنپ در چند روز اخیره
+(ورود به کوارتر جدید و ترافیک زیاد تحویل کارها). ممنون می‌شم این مورد رو از من
+ببخشید. موفق باشید 🌱
 
-## How I approached it
+---
 
-<!-- My POV: how I worked on this, what I asked the AI agent to do, what I drove
-     myself, and how decisions were made. -->
+## دربارهٔ پروژه
 
-## Architecture & key decisions
+Dragon Market هستهٔ یک بازار امنه: آیتم‌های Common/Rare با قیمت ثابت
+(**Limit Order**) فروخته می‌شن و آیتم‌های Legendary — که تو کل دنیا فقط یک نسخه
+دارن — از طریق **مزایده (Auction)**. کل طراحی حول همون سه تضمینی می‌چرخه که تو
+صورت‌مسئله اومده:
 
-<!-- Short bullets. Stack: Go, PostgreSQL, chi, hexagonal. Why each — or point to
-     docs/adr/0001-foundation.md. -->
+1. هیچ دارایی‌ای دوباره یا نامعتبر فروخته نشه.
+2. هیچ Guildی بیشتر از موجودی یا سقف روزانه‌ش تعهد خرید نده.
+3. بازار حتی موقع خرابیِ سرویس خارجی (Price Oracle) و پیشنهادهای همزمان،
+   قابل‌اتکا و قابل‌ردیابی بمونه.
 
-## Tech stack
+استک: **Go + PostgreSQL + chi**، با معماری **هگزاگونال (ports & adapters)**.
 
-<!-- Go 1.25 · PostgreSQL · chi · docker-compose. -->
+---
 
-## How to run
+## اجرا و ارزیابی
+
+### ساده‌ترین راه — Docker (app + Postgres)
 
 ```bash
-make up      # app + Postgres via docker-compose, then open http://localhost:8080/
-make check   # fmt + vet + build + test (the verification gate)
+make up
 ```
 
-The console at `/` lets you switch guilds and exercise every feature. Seeded
-guilds: `ironband`, `stormforge`, `shadowveil`. Auction window/extension are
-configurable (`AUCTION_WINDOW`, `AUCTION_EXTENSION`); compose uses short values
-so settlement is observable.
+بعدش کنسول رو باز کنید: **http://localhost:8080/**
 
-## API
+از منوی بالای صفحه Guild فعال رو عوض کنید (`ironband` / `stormforge` /
+`shadowveil`)، آیتم لیست کنید، بخرید، روی مزایده bid بذارید و کیف‌پول و لجر رو
+زنده ببینید. پنجرهٔ مزایده تو `docker-compose` عمداً کوتاهه تا بتونید settle شدنش
+رو بدون انتظار ببینید.
 
-<!-- Terse reference; all ✅ implemented. A browser console at `/` exercises
-     everything without curl. Identity: send `X-Guild-Id: <guild>` on mutating
-     requests; optional `Idempotency-Key` makes a retried POST safe. -->
+### تست‌ها (بدون نیاز به دیتابیس)
 
-| Method | Path | Purpose | |
-|--------|------|---------|--|
-| `GET` | `/` | Web console (test every feature in a browser) | ✅ |
-| `GET` | `/healthz` | Liveness | ✅ |
-| `POST` | `/items` | List an item (Legendary auto-opens an auction) | ✅ |
-| `GET` | `/items`, `/items/{id}` | List / details (+ advisory oracle price) | ✅ |
-| `POST` | `/items/{id}/purchase` | Buy a limit-order item (Common/Rare) | ✅ |
-| `POST` | `/items/{id}/bid` | Place a bid (Legendary auction) | ✅ |
-| `DELETE` | `/items/{id}/bid/{bid_id}` | Cancel a non-leading bid | ✅ |
-| `GET` | `/auctions`, `/auctions/{id}` | Active auctions / details | ✅ |
-| `GET` | `/guilds/{id}/wallet` | Wallet total/reserved/available | ✅ |
-| `GET` | `/guilds/{id}/ledger` | Full transaction history (audit) | ✅ |
+```bash
+make check          # gofmt + vet + build + test
+go test -race ./...  # همون تست‌ها زیر race detector
+```
 
-## Testing
+### شبیه‌سازی سناریوها (QA)
 
-<!-- What's covered and how to run it. -->
+یک اسکریپت JS به کمک ایجنت نوشتم که سرورِ در حال اجرا رو با **۴۱ اسرشن توی ۱۱ سناریوی واقعی**
+می‌زنه (خرید، سقف روزانه، idempotency، همزمانی بدون over-sell، چرخهٔ کامل مزایده و
+invariant بقای طلا). سرور رو با پنجرهٔ کوتاه بالا بیارید و بعد:
 
-## Design Q&A
+```bash
+BASE=http://localhost:8095 make qa
+```
 
-<!-- Short answers to the challenge's ADR questions — edit in my own words.
-     Full notes in docs/adr/0001-foundation.md. -->
+جزئیات دقیق اجرا تو کامنت بالای [`scripts/qa.mjs`](scripts/qa.mjs) هست. همین
+سناریوها توی CI هم روی یک Postgres واقعی اجرا می‌شن.
 
-**Why this structure?**
-I used a hexagonal layout so the business rules (wallets, auctions, bids) stay
-pure and unit-testable, with the external pieces — Postgres, the flaky Price
-Oracle, the clock — behind interfaces I can mock. I picked PostgreSQL because the
-hard guarantees (no duplicate sale, no over-commitment under concurrent bids) are
-really about atomicity and isolation, which the database enforces with
-transactions and row locks instead of hopeful application code.
+### API (خلاصه)
 
-**Where did I cut corners (off-trade)?**
-<!-- e.g. minimal auth, semantics I simplified — fill in. -->
+هویت با هدر `X-Guild-Id: <guild>` روی درخواست‌های تغییردهنده؛ هدر اختیاری
+`Idempotency-Key` هم retry رو امن می‌کنه.
 
-**What would I add with more time?**
-<!-- e.g. richer oracle resilience, fuller audit ledger, more race tests — fill in. -->
+| متد | مسیر | کار |
+|-----|------|-----|
+| `GET` | `/` | کنسول تحت وب |
+| `POST` | `/items` | لیست‌کردن آیتم (Legendary خودش مزایده باز می‌کنه) |
+| `GET` | `/items`, `/items/{id}` | لیست/جزئیات (+ قیمت مشورتیِ Oracle) |
+| `POST` | `/items/{id}/purchase` | خرید Limit Order |
+| `POST` | `/items/{id}/bid` | ثبت bid |
+| `DELETE` | `/items/{id}/bid/{bid_id}` | لغو bid (اگه نفر اول نباشی) |
+| `GET` | `/auctions`, `/auctions/{id}` | مزایده‌های فعال / جزئیات |
+| `GET` | `/guilds/{id}/wallet` | کیف‌پول (total/reserved/available) |
+| `GET` | `/guilds/{id}/ledger` | تاریخچهٔ کامل تراکنش‌ها (audit) |
 
-## Notes
+---
 
-<!-- AI assistance, anything else for the reviewer. -->
+## پاسخ به سوال‌های صورت‌مسئله
+
+**چرا این ساختار؟**
+
+از معماری هگزاگونال استفاده کردم تا منطق اصلی (کیف‌پول، آیتم، مزایده، bid) خالص و
+بدون I/O بمونه و بشه مستقل از دیتابیس و HTTP تستش کرد؛ سرویس‌های بیرونی
+(Price Oracle، کلاک، ریپازیتوری) هم پشت interface هستن و mock می‌شن — دقیقاً همون
+چیزی که خواسته شده بود.
+
+دیتابیس رو **PostgreSQL** انتخاب کردم چون سخت‌ترین بخشِ ماجرا اتمیک‌بودن و
+ایزوله‌بودنه: فروش تکراری نشه و زیر بارِ bidهای همزمان تعهد بیشتر از موجودی ایجاد
+نشه. این‌ها ذاتاً مسئلهٔ دیتابیسن، برای همین با استفاده از transaction 
+(`SELECT … FOR UPDATE`) گذاشتم خودِ دیتابیس این تضمین‌ها رو نگه داره. یک ایندکس یکتای partial هم داریم که «یک مزایدهٔ فعال به‌ازای هر آیتم»
+رو در سطح دیتابیس تضمین می‌کنه. پول رو هم به‌جای float با عدد صحیح (`int64`) نگه
+می‌دارم تا رزرو/آزادسازی همیشه دقیق به صفر برسه.
+
+**کجاها trade-off داشتم؟**
+
+- احراز هویتِ واقعی نذاشتم؛ Guild فعال از هدر `X-Guild-Id` میاد. برای یه چالشِ
+  هسته‌ای ترجیح دادم تمرکز روی درستیِ خودِ بازار باشه.
+- مکانیزم idempotency فعلاً in-memory هست و روی ری‌استارت پایدار نیست.
+- یه edge case نادر توی سقف روزانه هست: اگه یه Guild همزمان دو مزایده رو ببره که هرکدوم
+  جدا از سقف رد نشن، در تئوری ممکنه جمعشون از سقف رد بشه؛ این رو آگاهانه بیخیال شدم و توی ADR هم نوشتم.
+- همزمانی رو با `-race` و به‌صورت end-to-end (دستی + CI)
+  روی Postgres چک کردم، ولی تست ریسِ موازیِ مستقیم روی خودِ دیتابیس رو هنوز نذاشتم.
+
+**اگه وقت بیشتری داشتم چی اضافه می‌کردم؟**
+
+- تست‌های همزمانیِ واقعی روی Postgres (چند bidder موازی) داخل CI.
+- احراز هویت/دسترسی و rate limit به‌ازای Guild.
+
+---
+
+## چند تصمیم مهم (شاید براتون سوال پیش بیاد)
+
+- **سقف روزانه شامل چیه؟** خریدهای مستقیم + بردنِ مزایده؛ ریست در نیمه‌شب UTC. سرِ
+  bid هم چک می‌شه تا یک bidِ برنده نتونه از سقف رد بشه.
+- **نقش Oracle:** فقط مشورتی/نمایشیه؛ قیمت صفر/منفی/کند رد می‌شه و آخرین قیمت
+  معتبر نشون داده می‌شه، ولی هیچ‌وقت جلوی معامله رو نمی‌گیره.
+- **مدل موجودی:** هر لیستینگِ Common/Rare قیمت + تعداد داره؛ Legendary همیشه یک
+  واحده و فقط از راه مزایده فروخته می‌شه.
+
+دلیل و جزئیات کاملِ هر تصمیم توی [`ROADMAP.md`](ROADMAP.md) و
+[`docs/adr/`](docs/adr/) هست.
